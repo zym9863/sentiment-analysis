@@ -45,7 +45,7 @@ class MultiHeadAttention(nn.Module):
         
         if mask is not None:
             mask = mask.unsqueeze(1).unsqueeze(2)
-            attention_scores.masked_fill_(mask == 0, -1e9)
+            attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
         
         attention_weights = F.softmax(attention_scores, dim=-1)
         attention_weights = self.dropout(attention_weights)
@@ -185,7 +185,6 @@ class ImprovedSentimentModel(nn.Module):
                 if isinstance(layer, nn.Linear):
                     nn.init.xavier_normal_(layer.weight)
                     nn.init.zeros_(layer.bias)
-                    nn.init.zeros_(layer.bias)
     
     def forward(self, input_ids, attention_mask=None, token_type_ids=None):
         """前向传播"""
@@ -250,7 +249,7 @@ class ImprovedSentimentModel(nn.Module):
         return outputs
 
 class ContrastiveLoss(nn.Module):
-    """对比学习损失函数"""
+    """对比学习损失函数 - 修复了原地操作问题"""
     
     def __init__(self, temperature=0.1):
         super(ContrastiveLoss, self).__init__()
@@ -263,28 +262,42 @@ class ContrastiveLoss(nn.Module):
             labels: 标签 [batch_size]
         """
         batch_size = features.size(0)
+        device = features.device
         
         # 计算相似度矩阵
         similarity_matrix = torch.matmul(features, features.T) / self.temperature
         
-        # 创建标签掩码
-        labels_eq = labels.unsqueeze(1) == labels.unsqueeze(0)
-        labels_eq = labels_eq.float()
+        # 创建标签掩码（相同标签为正样本）
+        labels_expanded = labels.unsqueeze(1).expand(batch_size, batch_size)
+        labels_eq = (labels_expanded == labels_expanded.T).float()
         
-        # 去除对角线（自己和自己的相似度）
-        mask = torch.eye(batch_size, device=features.device).bool()
-        labels_eq.masked_fill_(mask, 0)
+        # 创建对角线掩码（去除自身）
+        identity_mask = torch.eye(batch_size, device=device).bool()
         
-        # 计算正样本和负样本的损失
+        # 使用where操作代替masked_fill避免原地操作
+        labels_eq = torch.where(identity_mask, torch.zeros_like(labels_eq), labels_eq)
+        
+        # 计算exp相似度，避免对角线
         exp_sim = torch.exp(similarity_matrix)
-        exp_sim.masked_fill_(mask, 0)
+        exp_sim = torch.where(identity_mask, torch.zeros_like(exp_sim), exp_sim)
         
+        # 计算正样本和负样本
         pos_sum = (exp_sim * labels_eq).sum(dim=1)
         neg_sum = exp_sim.sum(dim=1)
         
-        loss = -torch.log(pos_sum / (neg_sum + 1e-8))
+        # 防止除零和log(0)
+        pos_sum = torch.clamp(pos_sum, min=1e-8)
+        neg_sum = torch.clamp(neg_sum, min=1e-8)
         
-        return loss.mean()
+        # 计算对比损失
+        loss = -torch.log(pos_sum / neg_sum)
+        
+        # 只对有正样本的样本计算损失
+        valid_mask = pos_sum > 1e-8
+        if valid_mask.sum() > 0:
+            return loss[valid_mask].mean()
+        else:
+            return torch.tensor(0.0, device=device, requires_grad=True)
 
 def create_improved_model(model_name='bert-base-chinese', 
                          num_classes=2, 
