@@ -1,3 +1,5 @@
+[中文文档](README.md) | [English Version](README_EN.md)
+
 # 基于BERT与注意力机制的中文酒店评论情感分析
 
 ## 项目简介
