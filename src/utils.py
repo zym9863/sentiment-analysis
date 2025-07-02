@@ -424,3 +424,189 @@ def analyze_model_predictions(model, data_loader, tokenizer, device, num_samples
                 samples_analyzed += 1
     
     return results
+
+def plot_confusion_matrix(cm, class_names, ax=None, title='混淆矩阵', cmap='Blues', normalize=False):
+    """
+    绘制混淆矩阵
+    
+    Args:
+        cm: 混淆矩阵
+        class_names: 类别名称列表
+        ax: matplotlib轴对象，如果为None则创建新图
+        title: 图标题
+        cmap: 颜色映射
+        normalize: 是否归一化
+    """
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        fmt = '.2f'
+    else:
+        fmt = 'd'
+    
+    if ax is None:
+        plt.figure(figsize=(8, 6))
+        ax = plt.gca()
+    
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.set_title(title)
+    
+    # 添加颜色条
+    from matplotlib import colorbar
+    divider = plt.gca().get_axes().get_figure().add_axes([0.85, 0.15, 0.05, 0.7])
+    plt.colorbar(im, cax=divider)
+    
+    # 设置刻度
+    tick_marks = np.arange(len(class_names))
+    ax.set_xticks(tick_marks)
+    ax.set_yticks(tick_marks)
+    ax.set_xticklabels(class_names)
+    ax.set_yticklabels(class_names)
+    
+    # 添加文本标注
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                   ha="center", va="center",
+                   color="white" if cm[i, j] > thresh else "black")
+    
+    ax.set_ylabel('真实标签')
+    ax.set_xlabel('预测标签')
+    plt.tight_layout()
+
+def plot_roc_curve(y_true, y_score, ax=None, title='ROC曲线', label=None):
+    """
+    绘制ROC曲线
+    
+    Args:
+        y_true: 真实标签
+        y_score: 预测分数/概率
+        ax: matplotlib轴对象，如果为None则创建新图
+        title: 图标题
+        label: 曲线标签
+    """
+    from sklearn.metrics import roc_curve, auc
+    
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    roc_auc = auc(fpr, tpr)
+    
+    if ax is None:
+        plt.figure(figsize=(8, 6))
+        ax = plt.gca()
+    
+    # 绘制ROC曲线
+    curve_label = label or f'ROC曲线 (AUC = {roc_auc:.4f})'
+    ax.plot(fpr, tpr, lw=2, label=curve_label)
+    
+    # 绘制对角线（随机分类器）
+    ax.plot([0, 1], [0, 1], color='gray', lw=2, linestyle='--', label='随机分类器')
+    
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel('假正例率 (FPR)')
+    ax.set_ylabel('真正例率 (TPR)')
+    ax.set_title(title)
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+def visualize_attention(model, tokenizer, text, device, layer_idx=-1, head_idx=0, 
+                       save_path=None, figsize=(12, 8)):
+    """
+    可视化注意力权重
+    
+    Args:
+        model: 模型
+        tokenizer: 分词器
+        text: 输入文本
+        device: 设备
+        layer_idx: 层索引，-1表示最后一层
+        head_idx: 注意力头索引
+        save_path: 保存路径
+        figsize: 图片大小
+    """
+    model.eval()
+    
+    # 编码文本
+    inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=512)
+    input_ids = inputs['input_ids'].to(device)
+    attention_mask = inputs['attention_mask'].to(device)
+    
+    with torch.no_grad():
+        # 如果模型有output_attentions参数
+        try:
+            outputs = model(input_ids, attention_mask=attention_mask, output_attentions=True)
+            attentions = outputs.attentions  # 所有层的注意力权重
+        except:
+            # 如果模型不支持output_attentions，尝试直接调用
+            try:
+                outputs = model(input_ids, attention_mask=attention_mask, return_attention=True)
+                if 'attention_weights' in outputs:
+                    # 单层注意力权重
+                    attention_weights = outputs['attention_weights']
+                    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])
+                    
+                    # 去除padding
+                    valid_len = attention_mask[0].sum().item()
+                    attention_weights = attention_weights[0, :valid_len, :valid_len].cpu().numpy()
+                    tokens = tokens[:valid_len]
+                    
+                    # 绘制热力图
+                    plt.figure(figsize=figsize)
+                    sns.heatmap(attention_weights, 
+                               xticklabels=tokens, yticklabels=tokens,
+                               cmap='Blues', cbar=True)
+                    plt.title(f'注意力权重可视化')
+                    plt.xlabel('Key Tokens')
+                    plt.ylabel('Query Tokens')
+                    plt.xticks(rotation=45, ha='right')
+                    plt.yticks(rotation=0)
+                    
+                    if save_path:
+                        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                    
+                    plt.tight_layout()
+                    plt.show()
+                    return
+                else:
+                    print("模型没有返回注意力权重")
+                    return
+            except Exception as e:
+                print(f"无法获取注意力权重: {e}")
+                return
+    
+    # 使用transformers模型的注意力权重
+    if attentions is not None:
+        # 选择层
+        if layer_idx == -1:
+            layer_idx = len(attentions) - 1
+        attention = attentions[layer_idx][0]  # [num_heads, seq_len, seq_len]
+        
+        # 选择注意力头
+        attention = attention[head_idx].cpu().numpy()  # [seq_len, seq_len]
+        
+        # 获取tokens
+        tokens = tokenizer.convert_ids_to_tokens(input_ids[0])
+        
+        # 去除padding
+        valid_len = attention_mask[0].sum().item()
+        attention = attention[:valid_len, :valid_len]
+        tokens = tokens[:valid_len]
+        
+        # 绘制热力图
+        plt.figure(figsize=figsize)
+        sns.heatmap(attention, 
+                   xticklabels=tokens, yticklabels=tokens,
+                   cmap='Blues', cbar=True)
+        plt.title(f'注意力权重可视化 (Layer {layer_idx}, Head {head_idx})')
+        plt.xlabel('Key Tokens')
+        plt.ylabel('Query Tokens')
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=0)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("无法获取注意力权重")

@@ -226,6 +226,115 @@ class DataPreprocessor:
         
         return train_loader, val_loader, test_loader
 
+def load_and_preprocess_data(data_path, test_size=0.2, val_size=0.1, random_state=42):
+    """
+    向后兼容的数据加载和预处理函数
+    返回字典格式的数据，包含文本和标签
+    """
+    # 创建预处理器实例
+    preprocessor = DataPreprocessor(data_path)
+    
+    # 检查是否已有处理好的数据
+    processed_dir = Path("data/processed")
+    train_path = processed_dir / 'train.csv'
+    val_path = processed_dir / 'val.csv'
+    test_path = processed_dir / 'test.csv'
+    
+    if train_path.exists() and val_path.exists() and test_path.exists():
+        logger.info("加载已处理的数据...")
+        train_df = pd.read_csv(train_path)
+        val_df = pd.read_csv(val_path)
+        test_df = pd.read_csv(test_path)
+    else:
+        logger.info("重新处理数据...")
+        train_df, val_df, test_df = preprocessor.preprocess_data(test_size, val_size, random_state)
+    
+    # 转换为字典格式
+    def df_to_dict_list(df):
+        data_list = []
+        tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
+        
+        for _, row in df.iterrows():
+            text = str(row['cleaned_review'])
+            label = int(row['label'])
+            
+            # BERT编码
+            encoding = tokenizer(
+                text,
+                truncation=True,
+                padding='max_length',
+                max_length=512,
+                return_tensors='pt'
+            )
+            
+            data_dict = {
+                'text': text,
+                'label': label,
+                'input_ids': encoding['input_ids'].flatten().numpy(),
+                'attention_mask': encoding['attention_mask'].flatten().numpy()
+            }
+            data_list.append(data_dict)
+        
+        return data_list
+    
+    train_data = df_to_dict_list(train_df)
+    val_data = df_to_dict_list(val_df)
+    test_data = df_to_dict_list(test_df)
+    
+    logger.info(f"数据加载完成 - 训练: {len(train_data)}, 验证: {len(val_data)}, 测试: {len(test_data)}")
+    
+    return train_data, val_data, test_data
+
+
+def create_data_loaders(train_data, val_data, test_data, batch_size=16):
+    """
+    向后兼容的DataLoader创建函数
+    """
+    # 创建自定义数据集类用于字典格式数据
+    class DictDataset(Dataset):
+        def __init__(self, data):
+            self.data = data
+        
+        def __len__(self):
+            return len(self.data)
+        
+        def __getitem__(self, idx):
+            item = self.data[idx]
+            return {
+                'input_ids': torch.tensor(item['input_ids'], dtype=torch.long),
+                'attention_mask': torch.tensor(item['attention_mask'], dtype=torch.long),
+                'labels': torch.tensor(item['label'], dtype=torch.long)
+            }
+    
+    # 创建数据集
+    train_dataset = DictDataset(train_data)
+    val_dataset = DictDataset(val_data)
+    test_dataset = DictDataset(test_data)
+    
+    # 创建DataLoader
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0  # Windows系统建议设为0
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0
+    )
+    
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0
+    )
+    
+    return train_loader, val_loader, test_loader
+
 def main():
     """主函数"""
     # 初始化预处理器
