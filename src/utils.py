@@ -451,9 +451,7 @@ def plot_confusion_matrix(cm, class_names, ax=None, title='混淆矩阵', cmap='
     ax.set_title(title)
     
     # 添加颜色条
-    from matplotlib import colorbar
-    divider = plt.gca().get_axes().get_figure().add_axes([0.85, 0.15, 0.05, 0.7])
-    plt.colorbar(im, cax=divider)
+    plt.colorbar(im, ax=ax)
     
     # 设置刻度
     tick_marks = np.arange(len(class_names))
