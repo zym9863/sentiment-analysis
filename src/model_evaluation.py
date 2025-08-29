@@ -186,6 +186,7 @@ class ModelEvaluator:
         
         logger.info(f"评估报告已保存到 {save_dir}")
         return metrics, predictions
+    
     def _plot_roc_curve(self, y_true, y_prob, save_path=None):
         """绘制ROC曲线"""
         plt.figure(figsize=(8, 6))

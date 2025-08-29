@@ -67,6 +67,10 @@ class ModelTrainer:
         
         logger.info(f"Using device: {self.device}")
         
+        # GPU内存监控初始化
+        if self.device.type == 'cuda':
+            self._log_gpu_memory("初始化前")
+        
         # 保存目录
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +78,9 @@ class ModelTrainer:
         # 初始化模型
         self.model = self._create_model()
         self.model.to(self.device)
+        
+        if self.device.type == 'cuda':
+            self._log_gpu_memory("模型加载后")
         
         # 损失函数
         self.criterion = nn.CrossEntropyLoss()
@@ -101,6 +108,37 @@ class ModelTrainer:
             'val_acc': [],
             'learning_rate': []
         }
+    
+    def _log_gpu_memory(self, stage=""):
+        """记录GPU内存使用情况"""
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated(self.device) / 1024**3  # GB
+            reserved = torch.cuda.memory_reserved(self.device) / 1024**3   # GB
+            max_allocated = torch.cuda.max_memory_allocated(self.device) / 1024**3  # GB
+            
+            logger.info(f"GPU内存状态 {stage}:")
+            logger.info(f"  已分配: {allocated:.2f}GB")
+            logger.info(f"  已保留: {reserved:.2f}GB")
+            logger.info(f"  峰值分配: {max_allocated:.2f}GB")
+    
+    def _clear_gpu_cache(self):
+        """清理GPU缓存"""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            logger.info("GPU缓存已清理")
+    
+    def _monitor_gpu_memory_threshold(self, threshold=0.9):
+        """监控GPU内存使用是否超过阈值"""
+        if torch.cuda.is_available():
+            total_memory = torch.cuda.get_device_properties(self.device).total_memory
+            allocated = torch.cuda.memory_allocated(self.device)
+            usage_ratio = allocated / total_memory
+            
+            if usage_ratio > threshold:
+                logger.warning(f"GPU内存使用率过高: {usage_ratio:.2%}")
+                logger.warning("建议降低batch_size或清理GPU缓存")
+                return True
+        return False
     
     def _create_model(self):
         """创建模型"""
@@ -166,9 +204,18 @@ class ModelTrainer:
         correct_predictions = 0
         total_predictions = 0
         
+        # 训练开始前监控GPU内存
+        if self.device.type == 'cuda':
+            self._log_gpu_memory("训练epoch开始前")
+        
         progress_bar = tqdm(train_loader, desc='Training')
         
-        for batch in progress_bar:
+        for batch_idx, batch in enumerate(progress_bar):
+            # 每50个batch监控一次内存
+            if self.device.type == 'cuda' and batch_idx % 50 == 0:
+                if self._monitor_gpu_memory_threshold():
+                    self._clear_gpu_cache()
+            
             # 数据移动到设备
             input_ids = batch['input_ids'].to(self.device)
             attention_mask = batch['attention_mask'].to(self.device)
@@ -218,6 +265,11 @@ class ModelTrainer:
                 'lr': f'{current_lr:.2e}'
             })
         
+        # 训练结束后清理GPU缓存并监控
+        if self.device.type == 'cuda':
+            self._clear_gpu_cache()
+            self._log_gpu_memory("训练epoch结束后")
+        
         avg_loss = total_loss / len(train_loader)
         accuracy = correct_predictions / total_predictions
         
@@ -231,6 +283,10 @@ class ModelTrainer:
         total_predictions = 0
         all_predictions = []
         all_labels = []
+        
+        # 验证开始前监控GPU内存
+        if self.device.type == 'cuda':
+            self._log_gpu_memory("验证epoch开始前")
         
         with torch.no_grad():
             progress_bar = tqdm(val_loader, desc='Validation')
@@ -257,6 +313,11 @@ class ModelTrainer:
                     'loss': f'{loss.item():.4f}',
                     'acc': f'{correct_predictions/total_predictions:.4f}'
                 })
+        
+        # 验证结束后清理GPU缓存
+        if self.device.type == 'cuda':
+            self._clear_gpu_cache()
+            self._log_gpu_memory("验证epoch结束后")
         
         avg_loss = total_loss / len(val_loader)
         accuracy = correct_predictions / total_predictions
