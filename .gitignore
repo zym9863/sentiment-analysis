@@ -68,7 +68,6 @@ coverage.xml
 data/processed/
 models/saved_models/
 training.log
-*.csv
 *.json
 *.png
 *.pth

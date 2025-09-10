@@ -14,15 +14,11 @@ This project implements a sentiment analysis system for Chinese hotel reviews ba
 ## Project Structure
 
 ```
-├── data/                    # Data directory
-│   ├── raw/                # Raw data
-│   ├── processed/          # Processed data
-│   └── analysis/           # Data analysis results
 ├── models/                 # Model directory
 │   ├── base_model.py      # Basic BERT model
-│   ├── improved_model.py  # Improved BERT+BiLSTM+Attention model
-│   └── saved_models/      # Saved models
+│   └── improved_model.py  # Improved BERT+BiLSTM+Attention model
 ├── src/                   # Source code
+│   ├── config.py          # Configuration file
 │   ├── data_preprocessing.py  # Data preprocessing
 │   ├── model_training.py     # Model training
 │   ├── model_evaluation.py   # Model evaluation
@@ -32,8 +28,26 @@ This project implements a sentiment analysis system for Chinese hotel reviews ba
 │   ├── 02_model_training.ipynb
 │   ├── 03_evaluation_analysis.ipynb
 │   └── 04_ablation_study.ipynb
+├── tests/                 # Test files
+│   ├── __init__.py
+│   ├── run_tests.py       # Test runner
+│   ├── test_config.py     # Configuration tests
+│   ├── test_data_preprocessing.py  # Data preprocessing tests
+│   ├── test_model_evaluation.py    # Model evaluation tests
+│   ├── test_model_training.py      # Model training tests
+│   └── test_utils.py      # Utility function tests
 ├── results/               # Experimental results
-└── requirements.txt       # Dependencies
+│   ├── ablation_study_report.md    # Ablation study report
+│   └── evaluation_summary.md       # Evaluation summary
+├── ChnSentiCorp_htl_all.csv        # Dataset file
+├── config.yaml            # Configuration file
+├── requirements.txt       # Dependencies
+├── intro.ipynb           # Project introduction notebook
+├── code.md               # Code documentation
+├── product.md            # Product documentation
+├── LICENSE               # License
+├── README.md             # Chinese documentation
+└── README_EN.md          # English documentation
 ```
 
 ## Environment Setup
@@ -75,8 +89,15 @@ pip install -r requirements.txt
    python src/model_evaluation.py --model_path models/saved_models/best_model.pth
    ```
 
+4. **Run Tests**:
+   ```python
+   python tests/run_tests.py
+   ```
+
 ## Innovations
 
 1. **Multi-level Feature Fusion**: Combines deep semantic features from BERT and sequence modeling from BiLSTM
 2. **Improved Attention Mechanism**: Uses multi-head attention to capture diverse aspects
 3. **Contrastive Learning**: Enhances the model's representation learning ability
+4. **Comprehensive Evaluation System**: Multi-dimensional metrics and detailed case analysis
+5. **Complete Testing Framework**: Includes unit tests and integration tests

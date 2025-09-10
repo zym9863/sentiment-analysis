@@ -14,15 +14,11 @@
 ## 项目结构
 
 ```
-├── data/                    # 数据目录
-│   ├── raw/                # 原始数据
-│   ├── processed/          # 处理后的数据
-│   └── analysis/           # 数据分析结果
 ├── models/                 # 模型目录
 │   ├── base_model.py      # 基础BERT模型
-│   ├── improved_model.py  # 改进的BERT+BiLSTM+Attention模型
-│   └── saved_models/      # 保存的模型
+│   └── improved_model.py  # 改进的BERT+BiLSTM+Attention模型
 ├── src/                   # 源代码
+│   ├── config.py          # 配置文件
 │   ├── data_preprocessing.py  # 数据预处理
 │   ├── model_training.py     # 模型训练
 │   ├── model_evaluation.py   # 模型评估
@@ -32,8 +28,26 @@
 │   ├── 02_model_training.ipynb
 │   ├── 03_evaluation_analysis.ipynb
 │   └── 04_ablation_study.ipynb
+├── tests/                 # 测试文件
+│   ├── __init__.py
+│   ├── run_tests.py       # 测试运行器
+│   ├── test_config.py     # 配置测试
+│   ├── test_data_preprocessing.py  # 数据预处理测试
+│   ├── test_model_evaluation.py    # 模型评估测试
+│   ├── test_model_training.py      # 模型训练测试
+│   └── test_utils.py      # 工具函数测试
 ├── results/               # 实验结果
-└── requirements.txt       # 依赖包
+│   ├── ablation_study_report.md    # 消融实验报告
+│   └── evaluation_summary.md       # 评估总结
+├── ChnSentiCorp_htl_all.csv        # 数据集文件
+├── config.yaml            # 配置文件
+├── requirements.txt       # 依赖包
+├── intro.ipynb           # 项目介绍笔记本
+├── code.md               # 代码文档
+├── product.md            # 产品文档
+├── LICENSE               # 许可证
+├── README.md             # 中文文档
+└── README_EN.md          # 英文文档
 ```
 
 ## 环境设置
@@ -75,9 +89,15 @@ pip install -r requirements.txt
    python src/model_evaluation.py --model_path models/saved_models/best_model.pth
    ```
 
+4. **运行测试**:
+   ```python
+   python tests/run_tests.py
+   ```
+
 ## 创新点
 
 1. **多层次特征融合**: 结合BERT的深层语义和BiLSTM的序列建模
 2. **改进的注意力机制**: 使用多头注意力捕获不同方面的信息
 3. **对比学习**: 增强模型的表示学习能力
 4. **全面的评估体系**: 多维度指标和详细的案例分析
+5. **完整的测试框架**: 包含单元测试和集成测试
