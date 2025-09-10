@@ -129,15 +129,20 @@ class ModelTrainer:
     
     def _monitor_gpu_memory_threshold(self, threshold=0.9):
         """监控GPU内存使用是否超过阈值"""
-        if torch.cuda.is_available():
+        # 如果当前设备不是cuda或不可用，直接返回False，保证CPU测试安全
+        if not torch.cuda.is_available() or getattr(self.device, 'type', '') != 'cuda':
+            return False
+        try:
             total_memory = torch.cuda.get_device_properties(self.device).total_memory
             allocated = torch.cuda.memory_allocated(self.device)
             usage_ratio = allocated / total_memory
-            
             if usage_ratio > threshold:
                 logger.warning(f"GPU内存使用率过高: {usage_ratio:.2%}")
                 logger.warning("建议降低batch_size或清理GPU缓存")
                 return True
+        except Exception as e:
+            logger.debug(f"GPU内存监控异常: {e}")
+            return False
         return False
     
     def _create_model(self):

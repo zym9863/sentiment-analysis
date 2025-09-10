@@ -20,16 +20,33 @@ from datetime import datetime
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-def setup_logging(log_level=logging.INFO):
-    """设置日志配置"""
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('training.log', encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
+def setup_logging(level=logging.INFO, log_file=None):
+    """设置日志配置并返回logger
+    Args:
+        level: 日志级别 (logging.INFO 等)
+        log_file: 可选，指定日志文件路径；未提供则使用默认 training.log
+    Returns:
+        logging.Logger 实例
+    Note:
+        多次调用会先清除原有 handler，确保测试中重复调用不会产生重复日志。
+    """
+    logger = logging.getLogger()  # 根logger
+    # 清除已有handler避免重复
+    if logger.handlers:
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+    logger.setLevel(level)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # 文件handler
+    file_path = log_file if log_file else 'training.log'
+    fh = logging.FileHandler(file_path, encoding='utf-8')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    # 控制台handler
+    sh = logging.StreamHandler()
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+    return logger
 
 class EarlyStopping:
     """早停机制"""
@@ -39,24 +56,30 @@ class EarlyStopping:
         self.min_delta = min_delta
         self.restore_best_weights = restore_best_weights
         self.verbose = verbose
-        self.wait = 0
+        self.wait = 0  # 内部计数
+        self.counter = 0  # 测试所需显式counter
         self.stopped_epoch = 0
-        self.best = None
+        self.best = None  # 当前最佳监控值
+        self.best_score = None  # 测试期望字段，与best同步
         self.best_weights = None
         self.early_stop = False
     
     def __call__(self, val_loss, model=None):
         if self.best is None:
             self.best = val_loss
+            self.best_score = val_loss
             if model is not None:
                 self.best_weights = model.state_dict().copy()
         elif val_loss < self.best - self.min_delta:
             self.best = val_loss
+            self.best_score = val_loss
             self.wait = 0
+            self.counter = 0
             if model is not None:
                 self.best_weights = model.state_dict().copy()
         else:
             self.wait += 1
+            self.counter += 1
             if self.wait >= self.patience:
                 self.stopped_epoch = self.wait
                 self.early_stop = True
@@ -67,18 +90,23 @@ class ModelCheckpoint:
     """模型检查点"""
     
     def __init__(self, filepath, monitor='val_f1', mode='max', verbose=False):
+        # 兼容测试期望的属性命名
         self.filepath = Path(filepath)
+        self.checkpoint_path = self.filepath
         self.monitor = monitor
         self.mode = mode
         self.verbose = verbose
         self.best = None
+        self.best_score = None  # 测试使用
         
         if mode == 'max':
             self.is_better = lambda current, best: current > best
             self.best = -np.inf
+            self.best_score = -np.inf
         else:
             self.is_better = lambda current, best: current < best
             self.best = np.inf
+            self.best_score = np.inf
     
     def __call__(self, current_value, model, optimizer=None, epoch=None):
         if self.is_better(current_value, self.best):
@@ -86,6 +114,7 @@ class ModelCheckpoint:
                 print(f"Saving model to {self.filepath}")
             
             self.best = current_value
+            self.best_score = current_value  # 同步
             
             # 创建保存目录
             self.filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +123,9 @@ class ModelCheckpoint:
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
+                # 同时保存测试需要的字段名称
                 'best_score': self.best,
+                'score': self.best,  # 测试期望字段
                 'timestamp': datetime.now().isoformat()
             }
             
