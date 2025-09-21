@@ -96,7 +96,7 @@ class ModelTrainer:
         # 早停和模型检查点
         self.early_stopping = EarlyStopping(patience=patience, verbose=True)
         self.checkpoint = ModelCheckpoint(
-            self.save_dir / f'best_{model_type}_model.pth', 
+            self.save_dir / f'best_{model_type}_model.safetensors', 
             verbose=True
         )
         

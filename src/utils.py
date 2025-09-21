@@ -15,6 +15,7 @@ from pathlib import Path
 import json
 import pickle
 from datetime import datetime
+from safetensors.torch import save_file, load_file
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
@@ -119,20 +120,28 @@ class ModelCheckpoint:
             # 创建保存目录
             self.filepath.parent.mkdir(parents=True, exist_ok=True)
             
-            # 保存模型
-            checkpoint = {
+            # 使用safetensors格式保存模型参数
+            safetensors_path = self.filepath.with_suffix('.safetensors')
+            save_file(model.state_dict(), safetensors_path)
+            
+            # 同时保存元数据信息为JSON文件
+            metadata_path = self.filepath.with_suffix('.json')
+            metadata = {
                 'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                # 同时保存测试需要的字段名称
-                'best_score': self.best,
-                'score': self.best,  # 测试期望字段
-                'timestamp': datetime.now().isoformat()
+                'best_score': float(self.best),
+                'score': float(self.best),  # 测试期望字段
+                'timestamp': datetime.now().isoformat(),
+                'model_file': safetensors_path.name
             }
             
             if optimizer is not None:
-                checkpoint['optimizer_state_dict'] = optimizer.state_dict()
+                # 保存优化器状态为单独的文件
+                optimizer_path = self.filepath.with_suffix('.optimizer.safetensors')
+                save_file(optimizer.state_dict(), optimizer_path)
+                metadata['optimizer_file'] = optimizer_path.name
             
-            torch.save(checkpoint, self.filepath)
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
 
 class MetricsCalculator:
     """指标计算器"""
@@ -327,40 +336,90 @@ def save_model_info(model, save_path):
         json.dump(info, f, ensure_ascii=False, indent=2)
 
 def load_checkpoint(model, checkpoint_path, device='cpu'):
-    """加载模型检查点"""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    """加载模型检查点，支持safetensors格式"""
+    checkpoint_path = Path(checkpoint_path)
     
-    # 获取模型状态字典和检查点状态字典
-    model_state_dict = model.state_dict()
-    checkpoint_state_dict = checkpoint['model_state_dict']
+    # 检查是否存在safetensors格式的模型文件
+    safetensors_path = checkpoint_path.with_suffix('.safetensors')
+    metadata_path = checkpoint_path.with_suffix('.json')
     
-    # 检查是否有缺失的键
-    missing_keys = []
-    unexpected_keys = []
+    if safetensors_path.exists() and metadata_path.exists():
+        # 使用safetensors格式加载
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loading safetensors model from {safetensors_path}")
+        
+        # 加载模型参数
+        model_state_dict = load_file(safetensors_path)
+        
+        # 加载元数据
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+        
+        # 获取模型状态字典和检查点状态字典
+        current_state_dict = model.state_dict()
+        
+        # 检查是否有缺失的键
+        missing_keys = []
+        unexpected_keys = []
+        
+        for key in current_state_dict.keys():
+            if key not in model_state_dict:
+                missing_keys.append(key)
+        
+        for key in model_state_dict.keys():
+            if key not in current_state_dict:
+                unexpected_keys.append(key)
+        
+        # 只加载匹配的参数
+        filtered_state_dict = {k: v for k, v in model_state_dict.items() 
+                              if k in current_state_dict}
+        
+        # 使用strict=False来允许部分加载
+        model.load_state_dict(filtered_state_dict, strict=False)
+        
+        if missing_keys:
+            logger.warning(f"Missing keys in checkpoint: {missing_keys}")
+        if unexpected_keys:
+            logger.warning(f"Unexpected keys in checkpoint: {unexpected_keys}")
+        
+        return metadata.get('best_score'), metadata.get('epoch')
     
-    for key in model_state_dict.keys():
-        if key not in checkpoint_state_dict:
-            missing_keys.append(key)
-    
-    for key in checkpoint_state_dict.keys():
-        if key not in model_state_dict:
-            unexpected_keys.append(key)
-    
-    # 只加载匹配的参数
-    filtered_state_dict = {k: v for k, v in checkpoint_state_dict.items() 
-                          if k in model_state_dict}
-    
-    # 使用strict=False来允许部分加载
-    model.load_state_dict(filtered_state_dict, strict=False)
-    
-    # 获取logger实例
-    logger = logging.getLogger(__name__)
-    if missing_keys:
-        logger.warning(f"Missing keys in checkpoint: {missing_keys}")
-    if unexpected_keys:
-        logger.warning(f"Unexpected keys in checkpoint: {unexpected_keys}")
-    
-    return checkpoint.get('best_score', None), checkpoint.get('epoch', None)
+    else:
+        # 回退到旧的torch格式
+        logger = logging.getLogger(__name__)
+        logger.info(f"Loading torch format checkpoint from {checkpoint_path}")
+        
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        # 获取模型状态字典和检查点状态字典
+        model_state_dict = model.state_dict()
+        checkpoint_state_dict = checkpoint['model_state_dict']
+        
+        # 检查是否有缺失的键
+        missing_keys = []
+        unexpected_keys = []
+        
+        for key in model_state_dict.keys():
+            if key not in checkpoint_state_dict:
+                missing_keys.append(key)
+        
+        for key in checkpoint_state_dict.keys():
+            if key not in model_state_dict:
+                unexpected_keys.append(key)
+        
+        # 只加载匹配的参数
+        filtered_state_dict = {k: v for k, v in checkpoint_state_dict.items() 
+                              if k in model_state_dict}
+        
+        # 使用strict=False来允许部分加载
+        model.load_state_dict(filtered_state_dict, strict=False)
+        
+        if missing_keys:
+            logger.warning(f"Missing keys in checkpoint: {missing_keys}")
+        if unexpected_keys:
+            logger.warning(f"Unexpected keys in checkpoint: {unexpected_keys}")
+        
+        return checkpoint.get('best_score', None), checkpoint.get('epoch', None)
 
 def set_seed(seed=42):
     """设置随机种子"""
