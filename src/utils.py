@@ -135,10 +135,11 @@ class ModelCheckpoint:
             }
             
             if optimizer is not None:
-                # 保存优化器状态为单独的文件
-                optimizer_path = self.filepath.with_suffix('.optimizer.safetensors')
-                save_file(optimizer.state_dict(), optimizer_path)
+                # 保存优化器状态为单独的torch文件，保持非Tensor字段
+                optimizer_path = self.filepath.with_suffix('.optimizer.pt')
+                torch.save(optimizer.state_dict(), optimizer_path)
                 metadata['optimizer_file'] = optimizer_path.name
+                metadata['optimizer_format'] = 'torch'
             
             with open(metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
