@@ -15,10 +15,19 @@ from transformers import BertTokenizer
 from torch.utils.data import Dataset, DataLoader
 import torch
 import logging
+import sys
 from pathlib import Path
 
 # 导入配置管理器
-from .config import get_config
+try:
+    from .config import get_config
+except ImportError as import_error:
+    if __package__:
+        raise import_error
+    current_dir = Path(__file__).resolve().parent
+    if str(current_dir) not in sys.path:
+        sys.path.append(str(current_dir))
+    from config import get_config
 
 # 获取配置
 config = get_config()

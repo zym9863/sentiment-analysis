@@ -125,15 +125,15 @@ class ImprovedSentimentModel(nn.Module):
             dropout_rate
         )
         
-        # 位置编码
-        self.pos_encoding = PositionalEncoding(self.lstm_output_size)
-        
         # 层归一化
         self.layer_norm1 = nn.LayerNorm(self.lstm_output_size)
         self.layer_norm2 = nn.LayerNorm(self.lstm_output_size)
         
         # Dropout
         self.dropout = nn.Dropout(dropout_rate)
+        
+        # 序列级注意力池化
+        self.attention_pool_fc = nn.Linear(self.lstm_output_size, 1)
         
         # 特征融合层
         self.feature_fusion = nn.Sequential(
@@ -202,9 +202,6 @@ class ImprovedSentimentModel(nn.Module):
         
         # BiLSTM编码
         lstm_output, (hidden, cell) = self.lstm(bert_hidden_states)
-        
-        # 位置编码
-        lstm_output = self.pos_encoding(lstm_output)
         lstm_output = self.layer_norm1(lstm_output)
         
         # 多头注意力
@@ -216,14 +213,18 @@ class ImprovedSentimentModel(nn.Module):
         attention_output = lstm_output + self.dropout(attention_output)
         attention_output = self.layer_norm2(attention_output)
         
-        # 全局平均池化
+        # 注意力池化
+        pool_scores = self.attention_pool_fc(attention_output).squeeze(-1)
         if attention_mask is not None:
-            # 考虑padding mask
-            mask_expanded = attention_mask.unsqueeze(-1).expand(attention_output.size())
-            attention_output = attention_output * mask_expanded
-            pooled_attention = attention_output.sum(dim=1) / mask_expanded.sum(dim=1)
+            mask = (attention_mask == 0)
+            pool_scores = pool_scores.masked_fill(mask, float('-inf'))
+            token_attention = torch.softmax(pool_scores, dim=1)
+            token_attention = token_attention.masked_fill(mask, 0.0)
+            token_attention = token_attention / token_attention.sum(dim=1, keepdim=True).clamp_min(1e-6)
         else:
-            pooled_attention = attention_output.mean(dim=1)
+            token_attention = torch.softmax(pool_scores, dim=1)
+
+        pooled_attention = torch.bmm(token_attention.unsqueeze(1), attention_output).squeeze(1)
         
         # 特征融合
         fused_features = torch.cat([bert_pooled_output, pooled_attention], dim=1)
@@ -238,7 +239,8 @@ class ImprovedSentimentModel(nn.Module):
             'bert_hidden_states': bert_hidden_states,
             'lstm_output': lstm_output,
             'attention_weights': attention_weights,
-            'fused_features': fused_features
+            'fused_features': fused_features,
+            'token_attention': token_attention
         }
         
         # 对比学习的特征
