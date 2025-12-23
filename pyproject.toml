@@ -1,7 +1,32 @@
 [project]
 name = "sentiment-analysis"
 version = "0.1.0"
-description = "Add your description here"
+description = "中文情感分析NLP结课作业 - 基于ChnSentiCorp酒店评论数据集"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    # 数据处理
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    
+    # 机器学习
+    "scikit-learn>=1.3.0",
+    
+    # 中文分词
+    "jieba>=0.42.1",
+    
+    # 深度学习
+    "torch>=2.0.0",
+    
+    # 可视化
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "wordcloud>=1.9.0",
+    
+    # 工具
+    "tqdm>=4.65.0",
+    "joblib>=1.3.0",
+]
+
+[project.scripts]
+train = "main:main"
