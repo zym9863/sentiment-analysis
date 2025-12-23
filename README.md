@@ -1,3 +1,5 @@
+[English](README-EN.md) | [中文](README.md)
+
 # 中文情感分析 - NLP结课作业
 
 基于ChnSentiCorp酒店评论数据集的中文情感分析项目，使用传统机器学习和深度学习方法。
